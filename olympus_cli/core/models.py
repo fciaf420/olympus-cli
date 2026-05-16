@@ -7,6 +7,89 @@ from typing import Any
 
 
 @dataclass
+class SpreadInfo:
+    """Spread information for a token."""
+
+    token_id: str
+    spread: float
+    bid: float
+    ask: float
+
+    @classmethod
+    def from_clob(cls, token_id: str, data: dict[str, Any]) -> "SpreadInfo":
+        return cls(
+            token_id=token_id,
+            spread=float(data.get("spread", 0)),
+            bid=float(data.get("bid", 0)),
+            ask=float(data.get("ask", 0)),
+        )
+
+
+@dataclass
+class LastTradePrice:
+    """Last trade price for a token."""
+
+    token_id: str
+    price: float
+    timestamp: str
+
+    @classmethod
+    def from_clob(cls, token_id: str, data: dict[str, Any]) -> "LastTradePrice":
+        return cls(
+            token_id=token_id,
+            price=float(data.get("price", 0)),
+            timestamp=data.get("timestamp", ""),
+        )
+
+
+@dataclass
+class PriceHistoryPoint:
+    """A single point in price history."""
+
+    timestamp: int
+    price: float
+
+
+@dataclass
+class WalletPosition:
+    """Position from the Data API."""
+
+    market_slug: str
+    title: str
+    outcome: str
+    size: float
+    avg_price: float
+    cur_price: float
+    pnl: float
+    cash_pnl: float
+
+
+@dataclass
+class TradeRecord:
+    """A trade record from the Data API."""
+
+    id: str
+    market: str
+    side: str
+    outcome: str
+    size: float
+    price: float
+    timestamp: str
+
+
+@dataclass
+class LeaderboardEntry:
+    """An entry on the leaderboard."""
+
+    rank: int
+    address: str
+    name: str
+    pnl: float
+    volume: float
+    positions: int
+
+
+@dataclass
 class Position:
     """A single portfolio position."""
 

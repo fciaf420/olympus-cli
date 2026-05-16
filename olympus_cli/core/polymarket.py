@@ -7,7 +7,15 @@ from typing import Any
 import httpx
 
 from olympus_cli.core.config import Config
-from olympus_cli.core.models import ClobMarketInfo, Market, MidpointPrice, OrderBook
+from olympus_cli.core.models import (
+    ClobMarketInfo,
+    LastTradePrice,
+    Market,
+    MidpointPrice,
+    OrderBook,
+    PriceHistoryPoint,
+    SpreadInfo,
+)
 
 
 class PolymarketError(Exception):
@@ -128,6 +136,50 @@ class PolymarketClient:
             return [Market.from_gamma(m) for m in data]
         return []
 
+    def get_events(
+        self, limit: int = 20, tag: str | None = None, active: bool = True
+    ) -> list[dict]:
+        """Fetch events from gamma API.
+
+        Args:
+            limit: Maximum events to return.
+            tag: Optional tag filter.
+            active: Whether to filter for active events.
+
+        Returns:
+            List of event dicts.
+        """
+        params: dict[str, Any] = {"limit": limit, "active": str(active).lower()}
+        if tag:
+            params["tag"] = tag
+        data = self._request("/events", params=params)
+        if isinstance(data, list):
+            return data
+        return []
+
+    def get_event(self, slug_or_id: str) -> dict:
+        """Fetch a single event by slug or ID.
+
+        Args:
+            slug_or_id: Event slug or numeric ID.
+
+        Returns:
+            Event dict.
+
+        Raises:
+            PolymarketError: If event not found.
+        """
+        # Try slug first
+        data = self._request("/events", params={"slug": slug_or_id})
+        if isinstance(data, list) and data:
+            return data[0]
+        # Try by ID
+        if slug_or_id.isdigit():
+            data = self._request(f"/events/{slug_or_id}")
+            if data:
+                return data
+        raise PolymarketError(404, f"Event not found: {slug_or_id}")
+
     def close(self) -> None:
         """Close the HTTP client."""
         self._client.close()
@@ -185,6 +237,70 @@ class ClobClient:
         """
         data = self._request("/midpoint", params={"token_id": token_id})
         return MidpointPrice.from_clob(token_id, data)
+
+    def get_spread(self, token_id: str) -> SpreadInfo:
+        """Fetch spread info for a token.
+
+        Args:
+            token_id: The CLOB token ID.
+
+        Returns:
+            SpreadInfo with bid, ask, and spread.
+        """
+        data = self._request("/spread", params={"token_id": token_id})
+        return SpreadInfo.from_clob(token_id, data)
+
+    def get_last_trade(self, token_id: str) -> LastTradePrice:
+        """Fetch last trade price for a token.
+
+        Args:
+            token_id: The CLOB token ID.
+
+        Returns:
+            LastTradePrice with price and timestamp.
+        """
+        data = self._request("/last-trade-price", params={"token_id": token_id})
+        return LastTradePrice.from_clob(token_id, data)
+
+    def get_neg_risk(self, token_id: str) -> bool:
+        """Check if a token has neg risk.
+
+        Args:
+            token_id: The CLOB token ID.
+
+        Returns:
+            True if neg_risk is enabled.
+        """
+        data = self._request("/neg-risk", params={"token_id": token_id})
+        return bool(data.get("neg_risk", False))
+
+    def get_price_history(
+        self, token_id: str, interval: str = "1d", fidelity: int = 60
+    ) -> list[PriceHistoryPoint]:
+        """Fetch price history from the CLOB API.
+
+        Args:
+            token_id: The CLOB token ID (asset ID).
+            interval: Time interval (max, all, 1m, 1w, 1d, 6h, 1h).
+            fidelity: Accuracy in minutes (default 60 = hourly points).
+
+        Returns:
+            List of PriceHistoryPoint.
+        """
+        data = self._request(
+            "/prices-history",
+            params={"market": token_id, "interval": interval, "fidelity": fidelity},
+        )
+        points: list[PriceHistoryPoint] = []
+        history = data.get("history", []) if isinstance(data, dict) else []
+        for point in history:
+            points.append(
+                PriceHistoryPoint(
+                    timestamp=int(point.get("t", 0)),
+                    price=float(point.get("p", 0)),
+                )
+            )
+        return points
 
     def close(self) -> None:
         """Close the HTTP client."""

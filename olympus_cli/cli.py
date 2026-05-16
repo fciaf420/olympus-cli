@@ -10,6 +10,7 @@ from typing import Optional
 import typer
 
 from olympus_cli.core.config import Config
+from olympus_cli.core.data_api import DataApiClient
 from olympus_cli.core.models import TradeRequest
 from olympus_cli.core.olympus import OlympusClient, OlympusError
 from olympus_cli.core.polymarket import ClobClient, PolymarketClient, PolymarketError
@@ -21,6 +22,12 @@ app = typer.Typer(
 )
 config_app = typer.Typer(name="config", help="Manage configuration.")
 app.add_typer(config_app)
+
+data_app = typer.Typer(name="data", help="Polymarket Data API: positions, trades, leaderboard.")
+app.add_typer(data_app)
+
+events_app = typer.Typer(name="events", help="Browse Polymarket events.")
+app.add_typer(events_app)
 
 
 def _is_pretty(pretty: bool) -> bool:
@@ -388,6 +395,415 @@ def watch(
         format_trade_status(s)
     else:
         _json_out(asdict(s))
+
+
+# --- Spread ---
+
+@app.command()
+def spread(
+    slug: str = typer.Argument(..., help="Market slug"),
+    outcome: str = typer.Argument(..., help="Outcome name (e.g. Yes, No)"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Show bid/ask spread for an outcome."""
+    try:
+        poly = PolymarketClient()
+        m = poly.get_market(slug)
+        poly.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    matched = None
+    for o in m.outcomes:
+        if o.name.lower() == outcome.lower():
+            matched = o
+            break
+    if not matched:
+        available = ", ".join(o.name for o in m.outcomes)
+        _error_exit(f"Outcome '{outcome}' not found. Available: {available}")
+
+    try:
+        clob = ClobClient()
+        spread_info = clob.get_spread(matched.token_id)
+        clob.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import format_spread
+        format_spread(spread_info, market_question=m.question, outcome_name=matched.name)
+    else:
+        _json_out({
+            "token_id": spread_info.token_id,
+            "bid": spread_info.bid,
+            "ask": spread_info.ask,
+            "spread": spread_info.spread,
+        })
+
+
+# --- Last Trade ---
+
+@app.command("last-trade")
+def last_trade(
+    slug: str = typer.Argument(..., help="Market slug"),
+    outcome: str = typer.Argument(..., help="Outcome name (e.g. Yes, No)"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Show last trade price for an outcome."""
+    try:
+        poly = PolymarketClient()
+        m = poly.get_market(slug)
+        poly.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    matched = None
+    for o in m.outcomes:
+        if o.name.lower() == outcome.lower():
+            matched = o
+            break
+    if not matched:
+        available = ", ".join(o.name for o in m.outcomes)
+        _error_exit(f"Outcome '{outcome}' not found. Available: {available}")
+
+    try:
+        clob = ClobClient()
+        lt = clob.get_last_trade(matched.token_id)
+        clob.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import format_last_trade
+        format_last_trade(lt, market_question=m.question, outcome_name=matched.name)
+    else:
+        _json_out({
+            "token_id": lt.token_id,
+            "price": lt.price,
+            "timestamp": lt.timestamp,
+        })
+
+
+# --- Price History ---
+
+@app.command()
+def history(
+    slug: str = typer.Argument(..., help="Market slug"),
+    outcome: str = typer.Argument(..., help="Outcome name (e.g. Yes, No)"),
+    interval: str = typer.Option("1d", "--interval", "-i", help="Time interval (1d, 1w, 1m)"),
+    fidelity: int = typer.Option(30, "--fidelity", "-f", help="Number of data points"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Show price history for an outcome."""
+    try:
+        poly = PolymarketClient()
+        m = poly.get_market(slug)
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    matched = None
+    for o in m.outcomes:
+        if o.name.lower() == outcome.lower():
+            matched = o
+            break
+    if not matched:
+        available = ", ".join(o.name for o in m.outcomes)
+        _error_exit(f"Outcome '{outcome}' not found. Available: {available}")
+
+    try:
+        from olympus_cli.core.polymarket import ClobClient
+        clob = ClobClient()
+        points = clob.get_price_history(matched.token_id, interval=interval, fidelity=fidelity)
+        clob.close()
+        poly.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import format_price_history
+        format_price_history(points, market_question=m.question, outcome_name=matched.name)
+    else:
+        _json_out([{"timestamp": p.timestamp, "price": p.price} for p in points])
+
+
+# --- Data API: Positions ---
+
+@data_app.command("positions")
+def data_positions(
+    wallet: str = typer.Argument(..., help="Wallet address"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Show open positions for a wallet."""
+    try:
+        client = DataApiClient()
+        data = client.get_positions(wallet)
+        client.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import format_positions
+        format_positions(data)
+    else:
+        _json_out(data)
+
+
+# --- Data API: Closed Positions ---
+
+@data_app.command("closed")
+def data_closed(
+    wallet: str = typer.Argument(..., help="Wallet address"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Show closed positions for a wallet."""
+    try:
+        client = DataApiClient()
+        data = client.get_closed_positions(wallet)
+        client.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import format_positions
+        format_positions(data)
+    else:
+        _json_out(data)
+
+
+# --- Data API: Portfolio Value ---
+
+@data_app.command("value")
+def data_value(
+    wallet: str = typer.Argument(..., help="Wallet address"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Show portfolio value for a wallet."""
+    try:
+        client = DataApiClient()
+        data = client.get_portfolio_value(wallet)
+        client.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from rich.panel import Panel
+        from olympus_cli.formatters import console
+        if isinstance(data, dict):
+            console.print(Panel(
+                f"Value: [bold green]${float(data.get('value', 0)):,.2f}[/bold green]",
+                title="Portfolio Value", border_style="blue",
+            ))
+        else:
+            console.print(data)
+    else:
+        _json_out(data)
+
+
+# --- Data API: Trades ---
+
+@data_app.command("trades")
+def data_trades(
+    wallet: str = typer.Argument(..., help="Wallet address"),
+    limit: int = typer.Option(50, "--limit", "-n", help="Max trades to return"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Show trade history for a wallet."""
+    try:
+        client = DataApiClient()
+        data = client.get_trades(wallet, limit=limit)
+        client.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import format_trades
+        format_trades(data)
+    else:
+        _json_out(data)
+
+
+# --- Data API: Activity ---
+
+@data_app.command("activity")
+def data_activity(
+    wallet: str = typer.Argument(..., help="Wallet address"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Show activity feed for a wallet."""
+    try:
+        client = DataApiClient()
+        data = client.get_activity(wallet)
+        client.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import format_trades
+        format_trades(data)
+    else:
+        _json_out(data)
+
+
+# --- Data API: Top Holders ---
+
+@data_app.command("holders")
+def data_holders(
+    slug: str = typer.Argument(..., help="Market slug"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Show top holders for a market."""
+    try:
+        poly = PolymarketClient()
+        m = poly.get_market(slug)
+        poly.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    try:
+        client = DataApiClient()
+        data = client.get_top_holders(m.condition_id)
+        client.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import format_leaderboard
+        format_leaderboard(data)
+    else:
+        _json_out(data)
+
+
+# --- Data API: Open Interest ---
+
+@data_app.command("open-interest")
+def data_open_interest(
+    slug: str = typer.Argument(..., help="Market slug"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Show open interest for a market."""
+    try:
+        poly = PolymarketClient()
+        m = poly.get_market(slug)
+        poly.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    try:
+        client = DataApiClient()
+        data = client.get_open_interest(m.condition_id)
+        client.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from rich.panel import Panel
+        from olympus_cli.formatters import console
+        if isinstance(data, dict):
+            console.print(Panel(
+                f"Open Interest: [bold green]${float(data.get('openInterest', data.get('value', 0))):,.2f}[/bold green]",
+                title=f"Open Interest: {slug}", border_style="blue",
+            ))
+        else:
+            console.print(data)
+    else:
+        _json_out(data)
+
+
+# --- Data API: Leaderboard ---
+
+@data_app.command("leaderboard")
+def data_leaderboard(
+    period: str = typer.Option("MONTH", "--period", "-p", help="Time period (DAY, WEEK, MONTH, ALL)"),
+    order_by: str = typer.Option("PNL", "--order-by", "-o", help="Sort field (PNL, VOL)"),
+    category: str = typer.Option("OVERALL", "--category", "-c", help="Category (OVERALL, POLITICS, SPORTS, CRYPTO, etc.)"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max entries (max 50)"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Show the Polymarket leaderboard."""
+    try:
+        client = DataApiClient()
+        data = client.get_leaderboard(period=period, order_by=order_by, limit=limit, category=category)
+        client.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import format_leaderboard
+        format_leaderboard(data)
+    else:
+        _json_out(data)
+
+
+# --- Events: List ---
+
+@events_app.command("list")
+def events_list(
+    limit: int = typer.Option(20, "--limit", "-n", help="Max events"),
+    tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Filter by tag"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """List Polymarket events."""
+    try:
+        poly = PolymarketClient()
+        data = poly.get_events(limit=limit, tag=tag)
+        poly.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import format_events
+        format_events(data)
+    else:
+        _json_out(data)
+
+
+# --- Events: Get ---
+
+@events_app.command("get")
+def events_get(
+    slug_or_id: str = typer.Argument(..., help="Event slug or ID"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Get event details."""
+    try:
+        poly = PolymarketClient()
+        data = poly.get_event(slug_or_id)
+        poly.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import format_event_detail
+        format_event_detail(data)
+    else:
+        _json_out(data)
+
+
+# --- Events: Tags ---
+
+@events_app.command("tags")
+def events_tags(
+    slug_or_id: str = typer.Argument(..., help="Event slug or ID"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Get tags for an event."""
+    try:
+        poly = PolymarketClient()
+        data = poly.get_event(slug_or_id)
+        poly.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    tags = data.get("tags", []) if isinstance(data, dict) else []
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import console
+        if tags:
+            console.print(f"[bold]Tags:[/bold] {', '.join(str(t) for t in tags)}")
+        else:
+            console.print("[dim]No tags[/dim]")
+    else:
+        _json_out({"tags": tags})
 
 
 if __name__ == "__main__":

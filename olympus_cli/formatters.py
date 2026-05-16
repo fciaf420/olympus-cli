@@ -7,12 +7,17 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
+from typing import Any
+
 from olympus_cli.core.models import (
     ClobMarketInfo,
+    LastTradePrice,
     Market,
     MidpointPrice,
     OrderBook,
     Portfolio,
+    PriceHistoryPoint,
+    SpreadInfo,
     TradeResponse,
     TradeStatus,
 )
@@ -192,3 +197,225 @@ def format_trade_status(status: TradeStatus) -> None:
         lines.append(f"Error: [red]{status.error_message}[/red]")
 
     console.print(Panel("\n".join(lines), title="Trade Status", border_style="blue"))
+
+
+def format_spread(spread_info: SpreadInfo, market_question: str = "", outcome_name: str = "") -> None:
+    """Print spread info panel."""
+    title = f"Spread: {outcome_name}" if outcome_name else "Spread"
+    if market_question:
+        console.print(f"[dim]{market_question}[/dim]")
+    console.print(Panel(
+        f"Bid:    [green]${spread_info.bid:.4f}[/green]\n"
+        f"Ask:    [red]${spread_info.ask:.4f}[/red]\n"
+        f"Spread: [bold]{spread_info.spread:.4f}[/bold]",
+        title=title, border_style="blue",
+    ))
+
+
+def format_last_trade(last_trade: LastTradePrice, market_question: str = "", outcome_name: str = "") -> None:
+    """Print last trade price panel."""
+    title = f"Last Trade: {outcome_name}" if outcome_name else "Last Trade"
+    if market_question:
+        console.print(f"[dim]{market_question}[/dim]")
+    console.print(Panel(
+        f"Price:     [bold green]${last_trade.price:.4f}[/bold green]\n"
+        f"Timestamp: [dim]{last_trade.timestamp}[/dim]",
+        title=title, border_style="blue",
+    ))
+
+
+def format_price_history(
+    points: list[PriceHistoryPoint], market_question: str = "", outcome_name: str = ""
+) -> None:
+    """Print price history as a table with sparkline."""
+    title = f"Price History: {outcome_name}" if outcome_name else "Price History"
+    if market_question:
+        console.print(f"[dim]{market_question}[/dim]")
+
+    if not points:
+        console.print("[dim]No price history available[/dim]")
+        return
+
+    # Build sparkline from prices
+    prices = [p.price for p in points]
+    min_p, max_p = min(prices), max(prices)
+    spark_chars = " _.-~*"
+    if max_p > min_p:
+        sparkline = "".join(
+            spark_chars[int((p - min_p) / (max_p - min_p) * (len(spark_chars) - 1))]
+            for p in prices
+        )
+    else:
+        sparkline = "-" * len(prices)
+
+    console.print(Panel(
+        f"[bold]{sparkline}[/bold]\n\n"
+        f"Low: ${min_p:.4f}  |  High: ${max_p:.4f}  |  Current: ${prices[-1]:.4f}\n"
+        f"Points: {len(points)}",
+        title=title, border_style="blue",
+    ))
+
+    # Also show recent table (last 10 points)
+    table = Table(title="Recent Prices")
+    table.add_column("Timestamp", style="dim")
+    table.add_column("Price", justify="right", style="green")
+    for point in points[-10:]:
+        from datetime import datetime, timezone
+        try:
+            ts = datetime.fromtimestamp(point.timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+        except (ValueError, OSError):
+            ts = str(point.timestamp)
+        table.add_row(ts, f"${point.price:.4f}")
+    console.print(table)
+
+
+def format_positions(positions_data: Any) -> None:
+    """Print positions from data API."""
+    if not positions_data:
+        console.print("[dim]No positions found[/dim]")
+        return
+
+    items = positions_data if isinstance(positions_data, list) else [positions_data]
+    table = Table(title="Positions")
+    table.add_column("Market", style="cyan", max_width=40)
+    table.add_column("Outcome", style="magenta")
+    table.add_column("Size", justify="right")
+    table.add_column("Avg Price", justify="right")
+    table.add_column("Cur Price", justify="right")
+    table.add_column("PnL", justify="right")
+
+    for pos in items:
+        pnl = float(pos.get("cashPnl", pos.get("pnl", 0)))
+        pnl_style = "green" if pnl >= 0 else "red"
+        table.add_row(
+            str(pos.get("slug", pos.get("market", pos.get("title", "")))),
+            str(pos.get("outcome", pos.get("title", ""))),
+            f"{float(pos.get('size', 0)):.2f}",
+            f"${float(pos.get('avgPrice', pos.get('avg_price', 0))):.4f}",
+            f"${float(pos.get('curPrice', pos.get('cur_price', 0))):.4f}",
+            Text(f"${pnl:+.2f}", style=pnl_style),
+        )
+    console.print(table)
+
+
+def format_trades(trades_data: Any) -> None:
+    """Print trades from data API."""
+    if not trades_data:
+        console.print("[dim]No trades found[/dim]")
+        return
+
+    items = trades_data if isinstance(trades_data, list) else [trades_data]
+    table = Table(title="Trades")
+    table.add_column("Time", style="dim")
+    table.add_column("Market", style="cyan", max_width=35)
+    table.add_column("Side", style="magenta")
+    table.add_column("Outcome")
+    table.add_column("Size", justify="right")
+    table.add_column("Price", justify="right", style="green")
+
+    for trade in items:
+        side = str(trade.get("side", ""))
+        side_style = "green" if side.upper() == "BUY" else "red"
+        table.add_row(
+            str(trade.get("timestamp", trade.get("createdAt", "")))[:19],
+            str(trade.get("market", trade.get("slug", ""))),
+            Text(side, style=side_style),
+            str(trade.get("outcome", trade.get("title", ""))),
+            f"{float(trade.get('size', trade.get('amount', 0))):.2f}",
+            f"${float(trade.get('price', 0)):.4f}",
+        )
+    console.print(table)
+
+
+def format_leaderboard(leaderboard_data: Any) -> None:
+    """Print leaderboard from data API."""
+    if not leaderboard_data:
+        console.print("[dim]No leaderboard data[/dim]")
+        return
+
+    items = leaderboard_data if isinstance(leaderboard_data, list) else [leaderboard_data]
+    table = Table(title="Leaderboard")
+    table.add_column("#", justify="right", style="bold")
+    table.add_column("Name / Address", style="cyan")
+    table.add_column("PnL", justify="right")
+    table.add_column("Volume", justify="right")
+    table.add_column("Positions", justify="right")
+
+    for i, entry in enumerate(items, 1):
+        rank = entry.get("rank", i)
+        name = entry.get("userName", entry.get("name", entry.get("username", "")))
+        address = entry.get("proxyWallet", entry.get("address", entry.get("user", "")))
+        display = name if name else (address[:10] + "..." if len(address) > 10 else address)
+        pnl = float(entry.get("pnl", entry.get("profit", 0)))
+        pnl_style = "green" if pnl >= 0 else "red"
+        vol = float(entry.get("vol", entry.get("volume", 0)))
+        table.add_row(
+            str(rank),
+            display,
+            Text(f"${pnl:+,.2f}", style=pnl_style),
+            f"${vol:,.0f}",
+            str(entry.get("positions", entry.get("numPositions", ""))),
+        )
+    console.print(table)
+
+
+def format_events(events_data: Any) -> None:
+    """Print events list."""
+    if not events_data:
+        console.print("[dim]No events found[/dim]")
+        return
+
+    items = events_data if isinstance(events_data, list) else [events_data]
+    table = Table(title="Events")
+    table.add_column("Slug", style="cyan")
+    table.add_column("Title", max_width=50)
+    table.add_column("Markets", justify="right")
+    table.add_column("Volume", justify="right")
+
+    for ev in items:
+        markets = ev.get("markets", [])
+        num_markets = len(markets) if isinstance(markets, list) else 0
+        table.add_row(
+            str(ev.get("slug", "")),
+            str(ev.get("title", ""))[:50],
+            str(num_markets),
+            f"${float(ev.get('volume', 0)):,.0f}",
+        )
+    console.print(table)
+
+
+def format_event_detail(event_data: Any) -> None:
+    """Print detailed event info with child markets."""
+    if not event_data:
+        console.print("[dim]Event not found[/dim]")
+        return
+
+    ev = event_data
+    tags = ev.get("tags", [])
+    tags_str = ", ".join(tags) if isinstance(tags, list) else str(tags)
+
+    console.print(Panel(
+        f"[bold]{ev.get('title', '')}[/bold]\n\n"
+        f"Slug: [cyan]{ev.get('slug', '')}[/cyan]\n"
+        f"ID: {ev.get('id', '')}\n"
+        f"Tags: {tags_str}\n"
+        f"Volume: ${float(ev.get('volume', 0)):,.0f}\n"
+        f"Liquidity: ${float(ev.get('liquidity', 0)):,.0f}",
+        title="Event Detail", border_style="blue",
+    ))
+
+    markets = ev.get("markets", [])
+    if markets and isinstance(markets, list):
+        table = Table(title=f"Markets ({len(markets)})")
+        table.add_column("Slug", style="cyan")
+        table.add_column("Question", max_width=45)
+        table.add_column("Active", justify="center")
+
+        for m in markets:
+            active = "[green]Yes[/green]" if m.get("active") else "[red]No[/red]"
+            table.add_row(
+                str(m.get("slug", "")),
+                str(m.get("question", ""))[:45],
+                active,
+            )
+        console.print(table)

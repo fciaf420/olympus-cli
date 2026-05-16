@@ -20,6 +20,7 @@ class Config:
     olympus_base_url: str = "https://api.olympusx.app"
     polymarket_base_url: str = "https://gamma-api.polymarket.com"
     clob_base_url: str = "https://clob.polymarket.com"
+    data_base_url: str = "https://data-api.polymarket.com"
 
     @classmethod
     def load(cls) -> "Config":
@@ -43,6 +44,9 @@ class Config:
                 config.clob_base_url = data.get(
                     "clob_base_url", config.clob_base_url
                 )
+                config.data_base_url = data.get(
+                    "data_base_url", config.data_base_url
+                )
             except (json.JSONDecodeError, OSError):
                 pass
 
@@ -61,6 +65,7 @@ class Config:
             "olympus_base_url": self.olympus_base_url,
             "polymarket_base_url": self.polymarket_base_url,
             "clob_base_url": self.clob_base_url,
+            "data_base_url": self.data_base_url,
         }
         CONFIG_FILE.write_text(json.dumps(data, indent=2))
 
