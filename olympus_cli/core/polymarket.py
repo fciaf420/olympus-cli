@@ -57,27 +57,54 @@ class PolymarketClient:
         return Market.from_gamma(data)
 
     def search_markets(self, query: str, limit: int = 20) -> list[Market]:
-        """Search active markets by text query.
+        """Search markets using the /public-search endpoint.
+
+        Also accepts Polymarket URLs directly for convenience.
 
         Args:
-            query: Search text (e.g. "solana", "election").
+            query: Search text, slug, or polymarket.com URL.
             limit: Maximum results to return.
 
         Returns:
             List of matching Market objects.
         """
-        data = self._request(
-            "/markets",
-            params={
-                "active": "true",
-                "closed": "false",
-                "_q": query,
-                "limit": limit,
-            },
-        )
-        if isinstance(data, list):
-            return [Market.from_gamma(m) for m in data]
-        return []
+        # If query is a Polymarket URL, extract the slug
+        if "polymarket.com" in query:
+            slug = query.rstrip("/").split("/")[-1]
+            try:
+                return [self.get_market(slug)]
+            except PolymarketError:
+                pass
+
+        results: list[Market] = []
+        seen_slugs: set[str] = set()
+
+        # Use the official /public-search endpoint (proper full-text search)
+        try:
+            data = self._request(
+                "/public-search",
+                params={"q": query, "limit_per_type": limit},
+            )
+            if isinstance(data, dict):
+                for ev in data.get("events", []) or []:
+                    for m_data in ev.get("markets", []):
+                        m = Market.from_gamma(m_data)
+                        if m.slug not in seen_slugs:
+                            seen_slugs.add(m.slug)
+                            results.append(m)
+        except PolymarketError:
+            pass
+
+        # Fallback: try direct slug lookup if no results
+        if not results:
+            try:
+                data = self._request("/markets", params={"slug": query})
+                if isinstance(data, list) and data:
+                    results.append(Market.from_gamma(data[0]))
+            except PolymarketError:
+                pass
+
+        return results[:limit]
 
     def list_active_markets(self, limit: int = 20) -> list[Market]:
         """List active markets with order books.
