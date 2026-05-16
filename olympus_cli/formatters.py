@@ -7,7 +7,15 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
-from olympus_cli.core.models import Market, Portfolio, TradeResponse, TradeStatus
+from olympus_cli.core.models import (
+    ClobMarketInfo,
+    Market,
+    MidpointPrice,
+    OrderBook,
+    Portfolio,
+    TradeResponse,
+    TradeStatus,
+)
 
 console = Console()
 
@@ -67,8 +75,8 @@ def format_markets(markets: list[Market]) -> None:
     console.print(table)
 
 
-def format_market_detail(market: Market) -> None:
-    """Print detailed market info."""
+def format_market_detail(market: Market, clob_info: ClobMarketInfo | None = None) -> None:
+    """Print detailed market info with optional CLOB data."""
     order_book = "[green]Yes[/green]" if market.enable_order_book else "[red]No[/red]"
     accepting = "[green]Yes[/green]" if market.accepting_orders else "[red]No[/red]"
     console.print(Panel(
@@ -89,6 +97,59 @@ def format_market_detail(market: Market) -> None:
     for o in market.outcomes:
         tid = o.token_id[:20] + "..." if len(o.token_id) > 20 else o.token_id
         table.add_row(o.name, f"${o.price:.4f}", tid)
+    console.print(table)
+
+    if clob_info:
+        format_clob_info(clob_info)
+
+
+def format_clob_info(info: ClobMarketInfo) -> None:
+    """Print CLOB market info panel."""
+    rfq = "[green]Yes[/green]" if info.rfq_enabled else "[dim]No[/dim]"
+    console.print(Panel(
+        f"Min Tick Size: [bold]{info.min_tick_size}[/bold]\n"
+        f"Min Order Size: [bold]{info.min_order_size}[/bold]\n"
+        f"Maker Fee: {info.maker_fee_bps} bps  |  Taker Fee: {info.taker_fee_bps} bps\n"
+        f"Fee Rate: {info.fee_rate}  |  Min Order Age: {info.min_order_age_seconds}s\n"
+        f"RFQ Enabled: {rfq}",
+        title="CLOB Info", border_style="yellow",
+    ))
+
+
+def format_order_book(book: OrderBook, market_question: str = "", outcome_name: str = "") -> None:
+    """Print order book with bids and asks."""
+    title = f"Order Book: {outcome_name}" if outcome_name else "Order Book"
+    if market_question:
+        console.print(f"[dim]{market_question}[/dim]")
+
+    table = Table(title=title)
+    table.add_column("Bid Size", justify="right", style="green")
+    table.add_column("Bid Price", justify="right", style="green")
+    table.add_column("Ask Price", justify="right", style="red")
+    table.add_column("Ask Size", justify="right", style="red")
+
+    max_rows = max(len(book.bids), len(book.asks))
+    for i in range(min(max_rows, 20)):  # Show top 20 levels
+        bid_price = f"${book.bids[i].price:.4f}" if i < len(book.bids) else ""
+        bid_size = f"{book.bids[i].size:.2f}" if i < len(book.bids) else ""
+        ask_price = f"${book.asks[i].price:.4f}" if i < len(book.asks) else ""
+        ask_size = f"{book.asks[i].size:.2f}" if i < len(book.asks) else ""
+        table.add_row(bid_size, bid_price, ask_price, ask_size)
+
+    console.print(table)
+
+
+def format_midpoint_prices(prices: list[tuple[str, MidpointPrice]], market_question: str = "") -> None:
+    """Print midpoint prices for outcomes."""
+    if market_question:
+        console.print(f"[dim]{market_question}[/dim]")
+
+    table = Table(title="Midpoint Prices")
+    table.add_column("Outcome", style="magenta")
+    table.add_column("Midpoint", justify="right", style="bold green")
+
+    for name, mp in prices:
+        table.add_row(name, f"${mp.midpoint:.4f}")
     console.print(table)
 
 

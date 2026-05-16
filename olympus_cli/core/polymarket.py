@@ -1,4 +1,4 @@
-"""Polymarket Gamma API client."""
+"""Polymarket Gamma and CLOB API clients."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 
 from olympus_cli.core.config import Config
-from olympus_cli.core.models import Market
+from olympus_cli.core.models import ClobMarketInfo, Market, MidpointPrice, OrderBook
 
 
 class PolymarketError(Exception):
@@ -100,6 +100,64 @@ class PolymarketClient:
         if isinstance(data, list):
             return [Market.from_gamma(m) for m in data]
         return []
+
+    def close(self) -> None:
+        """Close the HTTP client."""
+        self._client.close()
+
+
+class ClobClient:
+    """Client for the Polymarket CLOB API."""
+
+    def __init__(self, config: Config | None = None):
+        self.config = config or Config.load()
+        self._client = httpx.Client(
+            base_url=self.config.clob_base_url,
+            timeout=30.0,
+        )
+
+    def _request(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        """Make a GET request to the CLOB API."""
+        resp = self._client.get(path, params=params)
+        if resp.status_code >= 400:
+            raise PolymarketError(resp.status_code, resp.text)
+        return resp.json()
+
+    def get_market_info(self, condition_id: str) -> ClobMarketInfo:
+        """Fetch CLOB market info by condition ID.
+
+        Args:
+            condition_id: The market's condition ID.
+
+        Returns:
+            ClobMarketInfo with tick size, fees, tokens, etc.
+        """
+        data = self._request(f"/clob-markets/{condition_id}")
+        return ClobMarketInfo.from_clob(data)
+
+    def get_order_book(self, token_id: str) -> OrderBook:
+        """Fetch order book for a token.
+
+        Args:
+            token_id: The CLOB token ID.
+
+        Returns:
+            OrderBook with bids and asks.
+        """
+        data = self._request("/book", params={"token_id": token_id})
+        return OrderBook.from_clob(token_id, data)
+
+    def get_midpoint(self, token_id: str) -> MidpointPrice:
+        """Fetch midpoint price for a token.
+
+        Args:
+            token_id: The CLOB token ID.
+
+        Returns:
+            MidpointPrice with the current midpoint.
+        """
+        data = self._request("/midpoint", params={"token_id": token_id})
+        return MidpointPrice.from_clob(token_id, data)
 
     def close(self) -> None:
         """Close the HTTP client."""

@@ -12,7 +12,7 @@ import typer
 from olympus_cli.core.config import Config
 from olympus_cli.core.models import TradeRequest
 from olympus_cli.core.olympus import OlympusClient, OlympusError
-from olympus_cli.core.polymarket import PolymarketClient, PolymarketError
+from olympus_cli.core.polymarket import ClobClient, PolymarketClient, PolymarketError
 
 app = typer.Typer(
     name="oly",
@@ -128,7 +128,7 @@ def market(
     slug: str = typer.Argument(..., help="Market slug"),
     pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
 ) -> None:
-    """Get full market details (outcomes, prices, volume)."""
+    """Get full market details (outcomes, prices, volume, CLOB info)."""
     try:
         client = PolymarketClient()
         m = client.get_market(slug)
@@ -136,11 +136,100 @@ def market(
     except PolymarketError as e:
         _error_exit(e.message)
 
+    # Fetch CLOB info if condition_id is available
+    clob_info = None
+    if m.condition_id:
+        try:
+            clob = ClobClient()
+            clob_info = clob.get_market_info(m.condition_id)
+            clob.close()
+        except PolymarketError:
+            pass  # CLOB info is supplementary; don't fail if unavailable
+
     if _is_pretty(pretty):
         from olympus_cli.formatters import format_market_detail
-        format_market_detail(m)
+        format_market_detail(m, clob_info=clob_info)
     else:
-        _json_out(asdict(m))
+        out = asdict(m)
+        if clob_info:
+            out["clob_info"] = asdict(clob_info)
+        _json_out(out)
+
+
+# --- Order Book ---
+
+@app.command()
+def orderbook(
+    slug: str = typer.Argument(..., help="Market slug"),
+    outcome: str = typer.Argument(..., help="Outcome name (e.g. Yes, No)"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Fetch and display order book from CLOB API."""
+    try:
+        poly = PolymarketClient()
+        m = poly.get_market(slug)
+        poly.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    matched = None
+    for o in m.outcomes:
+        if o.name.lower() == outcome.lower():
+            matched = o
+            break
+    if not matched:
+        available = ", ".join(o.name for o in m.outcomes)
+        _error_exit(f"Outcome '{outcome}' not found. Available: {available}")
+
+    try:
+        clob = ClobClient()
+        book = clob.get_order_book(matched.token_id)
+        clob.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import format_order_book
+        format_order_book(book, market_question=m.question, outcome_name=matched.name)
+    else:
+        _json_out(asdict(book))
+
+
+# --- Price ---
+
+@app.command()
+def price(
+    slug: str = typer.Argument(..., help="Market slug"),
+    pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
+) -> None:
+    """Fetch midpoint prices for all outcomes from CLOB API."""
+    try:
+        poly = PolymarketClient()
+        m = poly.get_market(slug)
+        poly.close()
+    except PolymarketError as e:
+        _error_exit(e.message)
+
+    prices = []
+    clob = ClobClient()
+    for o in m.outcomes:
+        if not o.token_id:
+            continue
+        try:
+            mp = clob.get_midpoint(o.token_id)
+            prices.append((o.name, mp))
+        except PolymarketError:
+            pass
+    clob.close()
+
+    if _is_pretty(pretty):
+        from olympus_cli.formatters import format_midpoint_prices
+        format_midpoint_prices(prices, market_question=m.question)
+    else:
+        _json_out([
+            {"outcome": name, "token_id": mp.token_id, "midpoint": mp.midpoint}
+            for name, mp in prices
+        ])
 
 
 # --- Buy ---
