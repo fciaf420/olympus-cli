@@ -100,41 +100,17 @@ oly config show
 oly config set-key
 ```
 
-## Agent Usage
+## Agent Integration
 
-The CLI outputs clean JSON by default (when stdout is not a TTY), making it ideal for use with Claude Code, LangChain agents, or any scripting workflow.
+**If you're an AI agent or building an automated system**, see [AGENT.md](AGENT.md) for the complete integration guide — install commands, JSON schemas for every endpoint, auth setup, error handling, and a step-by-step trading workflow.
 
-```python
-import subprocess, json
-
-# Get portfolio
-result = subprocess.run(["oly", "portfolio"], capture_output=True, text=True)
-portfolio = json.loads(result.stdout)
-print(f"Balance: ${portfolio['balance']}")
-
-# Search markets
-result = subprocess.run(["oly", "search", "bitcoin"], capture_output=True, text=True)
-markets = json.loads(result.stdout)
-
-# Buy and watch
-result = subprocess.run(
-    ["oly", "buy", "will-btc-hit-100k", "Yes", "25"],
-    capture_output=True, text=True,
-)
-trade = json.loads(result.stdout)
-trade_id = trade["trade_id"]
-
-# Poll until done
-result = subprocess.run(["oly", "watch", trade_id], capture_output=True, text=True)
-final = json.loads(result.stdout)
-print(f"Trade {final['status']}: filled at ${final['filled_price']}")
-```
-
-### Claude Code / MCP Integration
+Quick version: all commands output clean JSON to stdout when piped. Errors go to stderr. Exit code 1 on failure.
 
 ```bash
-oly portfolio | jq '.positions[] | select(.pnl < 0)'
-oly search "crypto" | jq '.[0].slug'
+# Agents can parse output directly
+oly portfolio | jq '.balance'
+oly search "bitcoin" | jq '.[0].slug'
+oly buy will-btc-hit-150k Yes 25 | jq '.trade_id'
 ```
 
 ## Architecture
