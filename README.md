@@ -4,6 +4,36 @@ A Python CLI tool wrapping the [Olympus Trading API](https://api.olympusx.app) a
 
 ## Install
 
+### One-liner (recommended)
+
+```bash
+pipx install olympus-trade-cli
+```
+
+Or with [uv](https://docs.astral.sh/uv/) (faster):
+
+```bash
+uv tool install olympus-trade-cli
+```
+
+Or plain pip:
+
+```bash
+pip install olympus-trade-cli
+```
+
+### Run without installing
+
+```bash
+# With uvx (uv's equivalent of npx)
+uvx --from olympus-trade-cli oly portfolio
+
+# With pipx
+pipx run --spec olympus-trade-cli oly portfolio
+```
+
+### From source (for development)
+
 ```bash
 git clone https://github.com/fciaf420/olympus-cli.git
 cd olympus-cli
@@ -129,6 +159,14 @@ olympus_cli/
 ```
 
 **Core library** (`olympus_cli.core`) is importable for scripting — pure functions, no print statements, returns structured dataclasses.
+
+## Publishing
+
+```bash
+make build      # Build sdist + wheel
+make check      # Validate package
+make publish    # Upload to PyPI
+```
 
 ## Requirements
 

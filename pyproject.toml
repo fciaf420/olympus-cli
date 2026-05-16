@@ -3,18 +3,39 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "olympus-cli"
+name = "olympus-trade-cli"
 version = "0.1.0"
-description = "CLI tool wrapping the Olympus Trading API and Polymarket Gamma API"
+description = "CLI tool wrapping the Olympus Trading API and Polymarket Gamma API for prediction market trading"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.10"
-authors = [{name = "Frank Ciafardini", email = "fciaf420@gmail.com"}]
-dependencies = [
-    "typer>=0.9.0",
-    "httpx>=0.25.0",
-    "rich>=13.0.0",
+authors = [{name = "fciaf420", email = "fciaf420@gmail.com"}]
+keywords = ["polymarket", "olympus", "trading", "prediction-markets", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial",
+    "Typing :: Typed",
 ]
+
+dependencies = [
+    "typer>=0.9.0,<1.0",
+    "httpx>=0.25.0,<1.0",
+    "rich>=13.0.0,<14.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/fciaf420/olympus-cli"
+Repository = "https://github.com/fciaf420/olympus-cli"
+Issues = "https://github.com/fciaf420/olympus-cli/issues"
 
 [project.scripts]
 oly = "olympus_cli.cli:app"
