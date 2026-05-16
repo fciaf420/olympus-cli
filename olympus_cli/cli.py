@@ -24,35 +24,33 @@ app.add_typer(config_app)
 
 
 def _is_pretty(pretty: bool) -> bool:
-    """Determine if output should be pretty-printed."""
     if pretty:
         return True
     return sys.stdout.isatty()
 
 
 def _json_out(data: dict | list) -> None:
-    """Print clean JSON to stdout."""
     typer.echo(json.dumps(data, indent=2, default=str))
 
 
 def _error_exit(msg: str) -> None:
-    """Print error and exit."""
     typer.echo(json.dumps({"error": msg}), err=True)
     raise typer.Exit(1)
 
 
 # --- Config commands ---
 
-
 @config_app.command("set-key")
 def config_set_key(
-    api_key: str = typer.Option(..., prompt=True, hide_input=True, help="Olympus API key"),
+    api_key: str = typer.Option(
+        ..., prompt=True, hide_input=True, help="Olympus API key"
+    ),
 ) -> None:
     """Save your Olympus API key."""
     cfg = Config.load()
     cfg.api_key = api_key
     cfg.save()
-    typer.echo(json.dumps({"status": "ok", "message": "API key saved to ~/.oly/config.json"}))
+    typer.echo(json.dumps({"status": "ok", "message": "API key saved"}))
 
 
 @config_app.command("show")
@@ -81,12 +79,11 @@ def config_show(
 
 # --- Portfolio ---
 
-
 @app.command()
 def portfolio(
     pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
 ) -> None:
-    """Show portfolio: positions, balance, equity, PnL."""
+    """Show portfolio: balance, positions, equity."""
     try:
         client = OlympusClient()
         p = client.get_portfolio()
@@ -102,7 +99,6 @@ def portfolio(
 
 
 # --- Search ---
-
 
 @app.command()
 def search(
@@ -127,7 +123,6 @@ def search(
 
 # --- Market detail ---
 
-
 @app.command()
 def market(
     slug: str = typer.Argument(..., help="Market slug"),
@@ -150,25 +145,25 @@ def market(
 
 # --- Buy ---
 
-
 @app.command()
 def buy(
     slug: str = typer.Argument(..., help="Market slug"),
     outcome: str = typer.Argument(..., help="Outcome to buy (Yes/No/Up/Down)"),
     usd: float = typer.Argument(..., help="Amount in USD to spend"),
-    max_price: Optional[float] = typer.Option(None, "--max-price", help="Max price per share"),
+    max_price: Optional[float] = typer.Option(None, "--max-price", help="Max price per share (0-1)"),
     stop_loss: Optional[float] = typer.Option(None, "--stop-loss", help="Stop-loss percent"),
     take_profit: Optional[float] = typer.Option(None, "--take-profit", help="Take-profit percent"),
     pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
 ) -> None:
     """Buy a market position."""
     try:
-        # Resolve market via Polymarket
         poly = PolymarketClient()
         m = poly.get_market(slug)
         poly.close()
 
-        # Find matching outcome
+        if not m.enable_order_book:
+            _error_exit(f"Market '{slug}' does not have order book enabled")
+
         matched = None
         for o in m.outcomes:
             if o.name.lower() == outcome.lower():
@@ -179,15 +174,17 @@ def buy(
             _error_exit(f"Outcome '{outcome}' not found. Available: {available}")
 
         trade = TradeRequest(
-            slug=slug,
-            outcome=matched.name,
-            side="buy",
+            side="BUY",
+            token_id=matched.token_id,
+            condition_id=m.condition_id,
+            market_title=m.question,
+            outcome_label=matched.name,
+            market_id=m.market_id or None,
+            market_slug=m.slug or None,
             amount_usd=usd,
             max_price=max_price,
-            stop_loss=stop_loss,
-            take_profit=take_profit,
-            condition_id=m.condition_id,
-            token_id=matched.token_id,
+            stop_loss_percent=stop_loss,
+            take_profit_percent=take_profit,
         )
 
         oly = OlympusClient()
@@ -205,23 +202,20 @@ def buy(
 
 # --- Sell ---
 
-
 @app.command()
 def sell(
     slug: str = typer.Argument(..., help="Market slug"),
     outcome: str = typer.Argument(..., help="Outcome to sell (Yes/No/Up/Down)"),
-    percent: Optional[float] = typer.Option(None, "--percent", help="Sell by percent (default 100)"),
+    percent: Optional[float] = typer.Option(None, "--percent", help="Sell by percent (1-100)"),
     shares: Optional[float] = typer.Option(None, "--shares", help="Sell exact number of shares"),
-    min_price: Optional[float] = typer.Option(None, "--min-price", help="Min price per share"),
+    min_price: Optional[float] = typer.Option(None, "--min-price", help="Min price per share (0-1)"),
     pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
 ) -> None:
     """Sell a position."""
     try:
-        # Get portfolio to find the position
         oly = OlympusClient()
         p = oly.get_portfolio()
 
-        # Find matching position
         matched_pos = None
         for pos in p.positions:
             if pos.slug == slug and pos.outcome.lower() == outcome.lower():
@@ -230,17 +224,21 @@ def sell(
         if not matched_pos:
             _error_exit(f"No open position found for {slug} / {outcome}")
 
-        sell_percent = percent if percent is not None else (None if shares else 100)
+        # Build sell spec per API docs
+        if shares is not None:
+            sell_spec = {"type": "shares", "sharesNormalized": shares}
+        else:
+            sell_spec = {"type": "percent", "sharePercent": percent or 100}
 
         trade = TradeRequest(
-            slug=slug,
-            outcome=matched_pos.outcome,
-            side="sell",
-            shares=shares,
-            percent=sell_percent,
-            min_price=min_price,
+            side="SELL",
+            token_id=matched_pos.token_id,  # positions[].asset
             condition_id=matched_pos.condition_id,
-            token_id=matched_pos.token_id,
+            market_title=slug,  # best we have
+            market_id=matched_pos.market_id or None,
+            market_slug=matched_pos.slug or None,
+            sell_spec=sell_spec,
+            min_price=min_price,
         )
 
         resp = oly.submit_trade(trade)
@@ -256,7 +254,6 @@ def sell(
 
 
 # --- Status ---
-
 
 @app.command()
 def status(
@@ -279,7 +276,6 @@ def status(
 
 
 # --- Watch ---
-
 
 @app.command()
 def watch(

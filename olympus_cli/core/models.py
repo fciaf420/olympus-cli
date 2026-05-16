@@ -17,21 +17,27 @@ class Position:
     current_price: float
     pnl: float
     pnl_percent: float
+    current_value: float = 0.0
     condition_id: str = ""
     token_id: str = ""
+    market_id: str = ""
+    redeemable: bool = False
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> "Position":
         return cls(
             slug=data.get("slug", ""),
-            outcome=data.get("outcome", ""),
-            shares=float(data.get("shares", 0)),
+            outcome=data.get("title", ""),
+            shares=float(data.get("size", 0)),
             avg_price=float(data.get("avgPrice", 0)),
-            current_price=float(data.get("currentPrice", 0)),
-            pnl=float(data.get("pnl", 0)),
-            pnl_percent=float(data.get("pnlPercent", 0)),
+            current_price=float(data.get("curPrice", 0)),
+            pnl=float(data.get("cashPnl", 0)),
+            pnl_percent=float(data.get("percentPnl", 0)),
+            current_value=float(data.get("currentValue", 0)),
             condition_id=data.get("conditionId", ""),
-            token_id=data.get("tokenId", ""),
+            token_id=data.get("asset", ""),
+            market_id=data.get("marketId", ""),
+            redeemable=data.get("redeemable", False),
         )
 
 
@@ -41,38 +47,78 @@ class Portfolio:
 
     balance: float
     equity: float
-    pnl: float
-    pnl_percent: float
+    positions_value: float
+    position_count: int
+    wallet_address: str = ""
     positions: list[Position] = field(default_factory=list)
+    calculated_at: str = ""
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> "Portfolio":
         positions = [Position.from_api(p) for p in data.get("positions", [])]
         return cls(
-            balance=float(data.get("balance", 0)),
-            equity=float(data.get("equity", 0)),
-            pnl=float(data.get("pnl", 0)),
-            pnl_percent=float(data.get("pnlPercent", 0)),
+            balance=float(data.get("pusdBalance", 0)),
+            equity=float(data.get("equityUsd", 0)),
+            positions_value=float(data.get("positionsValueUsd", 0)),
+            position_count=int(data.get("positionCount", 0)),
+            wallet_address=data.get("walletAddress", ""),
             positions=positions,
+            calculated_at=data.get("calculatedAt", ""),
         )
+
 
 
 @dataclass
 class TradeRequest:
     """A trade request to send to Olympus."""
 
-    slug: str
-    outcome: str
-    side: str  # "buy" or "sell"
+    side: str  # "BUY" or "SELL"
+    token_id: str
+    condition_id: str
+    market_title: str
+    outcome_label: str = ""
+    market_id: str | None = None
+    market_slug: str | None = None
+    # Buy fields
     amount_usd: float | None = None
-    shares: float | None = None
-    percent: float | None = None
     max_price: float | None = None
+    stop_loss_percent: float | None = None
+    take_profit_percent: float | None = None
+    # Sell fields
+    sell_spec: dict[str, Any] | None = None
     min_price: float | None = None
-    stop_loss: float | None = None
-    take_profit: float | None = None
-    condition_id: str = ""
-    token_id: str = ""
+
+    def to_payload(self) -> dict[str, Any]:
+        """Build the API request payload."""
+        payload: dict[str, Any] = {
+            "side": self.side.upper(),
+            "tokenId": self.token_id,
+            "conditionId": self.condition_id,
+            "marketTitle": self.market_title,
+        }
+        if self.market_id:
+            payload["marketId"] = self.market_id
+        if self.market_slug:
+            payload["marketSlug"] = self.market_slug
+
+        if self.side.upper() == "BUY":
+            payload["outcomeLabel"] = self.outcome_label
+            if self.amount_usd is not None:
+                payload["amountUsd"] = self.amount_usd
+            if self.max_price is not None:
+                payload["maxPrice"] = self.max_price
+            if self.stop_loss_percent is not None:
+                payload["stopLossPercent"] = self.stop_loss_percent
+            if self.take_profit_percent is not None:
+                payload["takeProfitPercent"] = self.take_profit_percent
+        else:
+            # SELL
+            if self.sell_spec:
+                payload["sellSpec"] = self.sell_spec
+            if self.min_price is not None:
+                payload["minPrice"] = self.min_price
+
+        return payload
 
 
 @dataclass
@@ -81,14 +127,14 @@ class TradeResponse:
 
     trade_id: str
     status: str
-    message: str = ""
+    success: bool = True
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> "TradeResponse":
         return cls(
             trade_id=data.get("tradeId", ""),
             status=data.get("status", ""),
-            message=data.get("message", ""),
+            success=data.get("success", True),
         )
 
 
@@ -98,18 +144,38 @@ class TradeStatus:
 
     trade_id: str
     status: str  # QUEUED, PROCESSING, SUCCEEDED, FAILED
-    filled_price: float | None = None
+    side: str = ""
+    market_title: str = ""
+    outcome_label: str = ""
+    requested_amount_usd: float | None = None
     filled_shares: float | None = None
-    error: str | None = None
+    filled_price: float | None = None
+    spent_usd: float | None = None
+    order_hash: str | None = None
+    transaction_hash: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    created_at: str = ""
+    completed_at: str = ""
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> "TradeStatus":
         return cls(
             trade_id=data.get("tradeId", ""),
             status=data.get("status", ""),
+            side=data.get("side", ""),
+            market_title=data.get("marketTitle", ""),
+            outcome_label=data.get("outcomeLabel", ""),
+            requested_amount_usd=data.get("requestedAmountUsd"),
+            filled_shares=data.get("filledSharesNormalized"),
             filled_price=data.get("filledPrice"),
-            filled_shares=data.get("filledShares"),
-            error=data.get("error"),
+            spent_usd=data.get("spentUsd"),
+            order_hash=data.get("orderHash"),
+            transaction_hash=data.get("transactionHash"),
+            error_code=data.get("errorCode"),
+            error_message=data.get("errorMessage"),
+            created_at=data.get("createdAt", ""),
+            completed_at=data.get("completedAt", ""),
         )
 
     @property
@@ -134,12 +200,15 @@ class Market:
     slug: str
     question: str
     condition_id: str
+    market_id: str = ""
     outcomes: list[MarketOutcome] = field(default_factory=list)
     volume: float = 0.0
     liquidity: float = 0.0
     end_date: str = ""
     active: bool = True
     closed: bool = False
+    enable_order_book: bool = False
+    accepting_orders: bool = False
 
     @classmethod
     def from_gamma(cls, data: dict[str, Any]) -> "Market":
@@ -147,13 +216,21 @@ class Market:
         outcomes: list[MarketOutcome] = []
         outcome_names = data.get("outcomes", "")
         if isinstance(outcome_names, str):
-            outcome_names = [s.strip() for s in outcome_names.split(",") if s.strip()]
+            import json as _json
+            try:
+                outcome_names = _json.loads(outcome_names)
+            except Exception:
+                outcome_names = [s.strip() for s in outcome_names.split(",") if s.strip()]
+        elif not isinstance(outcome_names, list):
+            outcome_names = []
 
         outcome_prices_str = data.get("outcomePrices", "")
         if isinstance(outcome_prices_str, str):
-            outcome_prices = [
-                float(p) for p in outcome_prices_str.split(",") if p.strip()
-            ]
+            try:
+                import json as _json
+                outcome_prices = [float(p) for p in _json.loads(outcome_prices_str)]
+            except Exception:
+                outcome_prices = [float(p) for p in outcome_prices_str.split(",") if p.strip()]
         elif isinstance(outcome_prices_str, list):
             outcome_prices = [float(p) for p in outcome_prices_str]
         else:
@@ -161,7 +238,11 @@ class Market:
 
         clobTokenIds = data.get("clobTokenIds", "")
         if isinstance(clobTokenIds, str):
-            token_ids = [t.strip() for t in clobTokenIds.split(",") if t.strip()]
+            try:
+                import json as _json
+                token_ids = _json.loads(clobTokenIds)
+            except Exception:
+                token_ids = [t.strip() for t in clobTokenIds.split(",") if t.strip()]
         elif isinstance(clobTokenIds, list):
             token_ids = [str(t) for t in clobTokenIds]
         else:
@@ -176,10 +257,13 @@ class Market:
             slug=data.get("slug", ""),
             question=data.get("question", ""),
             condition_id=data.get("conditionId", ""),
+            market_id=str(data.get("id", "")),
             outcomes=outcomes,
             volume=float(data.get("volume", 0)),
             liquidity=float(data.get("liquidity", 0)),
             end_date=data.get("endDate", ""),
             active=data.get("active", True),
             closed=data.get("closed", False),
+            enable_order_book=data.get("enableOrderBook", False),
+            accepting_orders=data.get("acceptingOrders", False),
         )
