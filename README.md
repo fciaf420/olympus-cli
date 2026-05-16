@@ -2,35 +2,31 @@
 
 A Python CLI tool wrapping the [Olympus Trading API](https://api.olympusx.app) and [Polymarket Gamma API](https://gamma-api.polymarket.com). Designed for both human use (pretty tables) and agent/script use (clean JSON output).
 
+## Quick start (no install needed)
+
+```bash
+uvx --from olympus-trade-cli oly portfolio
+```
+
+That's it. Run any `oly` command instantly — no install, no venv, no setup.
+
 ## Install
 
-### One-liner (recommended)
+If you want `oly` permanently available on your PATH:
 
 ```bash
-pipx install olympus-trade-cli
+uv tool install olympus-trade-cli   # recommended
+pipx install olympus-trade-cli      # alternative
+pip install olympus-trade-cli       # if you prefer pip
 ```
 
-Or with [uv](https://docs.astral.sh/uv/) (faster):
+### Don't have uv?
 
 ```bash
-uv tool install olympus-trade-cli
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Or plain pip:
-
-```bash
-pip install olympus-trade-cli
-```
-
-### Run without installing
-
-```bash
-# With uvx (uv's equivalent of npx)
-uvx --from olympus-trade-cli oly portfolio
-
-# With pipx
-pipx run --spec olympus-trade-cli oly portfolio
-```
+Then run `uv tool install olympus-trade-cli` or use `uvx` for zero-install execution.
 
 ### From source (for development)
 
@@ -45,11 +41,8 @@ pip install -e .
 Set your Olympus API key:
 
 ```bash
-# Interactive prompt (recommended)
-oly config set-key
-
-# Or via environment variable
-export OLY_API_KEY="your-key-here"
+oly config set-key                  # interactive prompt
+export OLY_API_KEY="your-key-here"  # or env var
 ```
 
 Config is stored at `~/.oly/config.json`.
@@ -140,7 +133,6 @@ print(f"Trade {final['status']}: filled at ${final['filled_price']}")
 ### Claude Code / MCP Integration
 
 ```bash
-# In a Claude Code session or MCP tool:
 oly portfolio | jq '.positions[] | select(.pnl < 0)'
 oly search "crypto" | jq '.[0].slug'
 ```
