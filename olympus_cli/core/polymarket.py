@@ -137,21 +137,29 @@ class PolymarketClient:
         return []
 
     def get_events(
-        self, limit: int = 20, tag: str | None = None, active: bool = True
+        self,
+        limit: int = 20,
+        tag: str | None = None,
+        active: bool = True,
+        closed: bool | None = None,
     ) -> list[dict]:
         """Fetch events from gamma API.
 
         Args:
             limit: Maximum events to return.
-            tag: Optional tag filter.
+            tag: Optional tag filter (gamma `tag_slug`, e.g. "nba").
             active: Whether to filter for active events.
+            closed: When set, filter for closed/open events. Pass False to
+                only get open (still-tradable) events.
 
         Returns:
             List of event dicts.
         """
         params: dict[str, Any] = {"limit": limit, "active": str(active).lower()}
         if tag:
-            params["tag"] = tag
+            params["tag_slug"] = tag
+        if closed is not None:
+            params["closed"] = str(closed).lower()
         data = self._request("/events", params=params)
         if isinstance(data, list):
             return data
