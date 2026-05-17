@@ -806,5 +806,35 @@ def events_tags(
         _json_out({"tags": tags})
 
 
+# --- Setup Skill ---
+
+@app.command("setup-skill")
+def setup_skill() -> None:
+    """Install the Claude skill for Polymarket trading assistant."""
+    import shutil
+    from pathlib import Path
+
+    # Find the skill source bundled with this package
+    source = Path(__file__).parent / "skill" / "SKILL.md"
+
+    if not source.exists():
+        # Fallback: repo root (development mode)
+        source = Path(__file__).parent.parent / "skill" / "SKILL.md"
+
+    if not source.exists():
+        _error_exit("SKILL.md not found in package. Try reinstalling: uv tool install git+https://github.com/fciaf420/olympus-cli.git --force")
+
+    dest_dir = Path.home() / ".claude" / "skills" / "olympus-cli"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / "SKILL.md"
+
+    shutil.copy2(source, dest)
+    typer.echo(json.dumps({
+        "status": "ok",
+        "message": f"Skill installed to {dest}",
+        "path": str(dest),
+    }))
+
+
 if __name__ == "__main__":
     app()

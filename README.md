@@ -119,16 +119,16 @@ The repo includes a ready-made **skill** that teaches Claude how to use the `oly
 
 ### Install the skill
 
-Copy the skill folder to your Claude skills directory:
+```bash
+oly setup-skill
+```
+
+That's it — one command copies the skill into `~/.claude/skills/olympus-cli/`.
+
+Or do it manually if you prefer:
 
 ```bash
 cp -r skill/ ~/.claude/skills/olympus-cli/
-```
-
-Or symlink it so updates pull automatically:
-
-```bash
-ln -sf "$(pwd)/skill" ~/.claude/skills/olympus-cli
 ```
 
 After installing, any Claude session (Cowork, Claude Code, etc.) will automatically use the skill when you ask about Polymarket, prediction markets, portfolio balances, or trading.

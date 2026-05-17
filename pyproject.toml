@@ -43,3 +43,6 @@ oly = "olympus_cli.cli:app"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["olympus_cli*"]
+
+[tool.setuptools.package-data]
+olympus_cli = ["skill/SKILL.md"]
