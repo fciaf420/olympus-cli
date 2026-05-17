@@ -1,0 +1,23 @@
+{
+  "skill_name": "olympus-cli",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "whats my polymarket balance right now",
+      "expected_output": "Claude runs `oly portfolio` and reports the user's PUSD balance, equity, and any open positions in a conversational way",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "find me prediction markets about AI and show me which ones have the best liquidity",
+      "expected_output": "Claude runs `oly search \"AI\" --limit 10` or similar, then checks orderbook depth on promising results, and summarizes which markets have tightest spreads and deepest books",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I want to bet $3 on Yes for whether bitcoin hits 200k by end of year. do it if the price is reasonable",
+      "expected_output": "Claude searches for the market, checks the current price via `oly price`, evaluates whether it's 'reasonable', asks the user to confirm before executing, then uses `oly buy` with --max-price and watches the trade",
+      "files": []
+    }
+  ]
+}

@@ -113,6 +113,36 @@ oly search "bitcoin" | jq '.[0].slug'
 oly buy will-btc-hit-150k Yes 25 | jq '.trade_id'
 ```
 
+## Claude Skill (for Cowork / Claude Code)
+
+The repo includes a ready-made **skill** that teaches Claude how to use the `oly` CLI as a Polymarket trading assistant. Once installed, Claude automatically knows every command, the correct workflow, and how to interpret results — no manual prompting needed.
+
+### Install the skill
+
+Copy the skill folder to your Claude skills directory:
+
+```bash
+cp -r skill/ ~/.claude/skills/olympus-cli/
+```
+
+Or symlink it so updates pull automatically:
+
+```bash
+ln -sf "$(pwd)/skill" ~/.claude/skills/olympus-cli
+```
+
+After installing, any Claude session (Cowork, Claude Code, etc.) will automatically use the skill when you ask about Polymarket, prediction markets, portfolio balances, or trading.
+
+### What it enables
+
+With the skill installed, you can just say things like:
+- "What's my balance?"
+- "Find markets about AI"
+- "Buy $5 of Yes on that bitcoin market if it's under 40 cents"
+- "Sell half my position"
+
+Claude will know exactly which `oly` commands to run, in what order, and will always confirm before executing trades.
+
 ## Architecture
 
 ```
