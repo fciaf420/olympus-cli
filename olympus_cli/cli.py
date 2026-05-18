@@ -786,11 +786,22 @@ def events_upcoming(
     within_hours: int = typer.Option(36, "--within-hours", "-h", help="Window in hours"),
     tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Filter by tag (e.g. nba, nfl)"),
     limit: int = typer.Option(200, "--limit", "-n", help="Max events to scan from API"),
+    stale_hours: int = typer.Option(
+        24, "--stale-hours",
+        help="Also include events whose endDate is up to N hours in the past "
+             "but are still trading (active+!closed). Polymarket frequently "
+             "lists game-of-day markets with stale endDates.",
+    ),
     pretty: bool = typer.Option(False, "--pretty", help="Human-readable output"),
 ) -> None:
     """List open events ending within the next N hours (default 36).
 
     Useful for finding tonight's games — e.g. `oly events upcoming -t nba`.
+
+    Events whose endDate is in the past but that are still flagged
+    active/!closed (Polymarket leaves the market open during a game
+    even when endDate has already passed) are included up to
+    `--stale-hours` ago.
     """
     from datetime import datetime, timezone, timedelta
 
@@ -802,17 +813,25 @@ def events_upcoming(
         _error_exit(e.message)
 
     now = datetime.now(timezone.utc)
-    cutoff = now + timedelta(hours=within_hours)
+    upper = now + timedelta(hours=within_hours)
+    lower = now - timedelta(hours=stale_hours)
     upcoming = []
     for e in data:
+        # Authoritative "still trading" signal: API flags. Date filtering
+        # is best-effort because Polymarket's endDate is unreliable.
+        if e.get("closed") is True or e.get("active") is False:
+            continue
         end_raw = e.get("endDate") or e.get("end_date") or ""
         if not end_raw:
+            # No date info but still trading — include it.
+            upcoming.append(e)
             continue
         try:
             end_dt = datetime.fromisoformat(end_raw.replace("Z", "+00:00"))
         except ValueError:
+            upcoming.append(e)
             continue
-        if now < end_dt < cutoff:
+        if lower < end_dt < upper:
             upcoming.append(e)
     upcoming.sort(
         key=lambda e: e.get("endDate") or e.get("end_date") or ""
